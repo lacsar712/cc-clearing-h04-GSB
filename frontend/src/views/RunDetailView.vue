@@ -8,13 +8,10 @@
       <el-button @click="load">刷新</el-button>
       <el-button
         type="success"
-        :disabled="!auth.isOperator || alreadySettled"
+        :disabled="!auth.isOperator || alreadySettled || !isCompleted"
         :loading="settling"
         @click="settle"
       >确认 Settle</el-button>
-      <el-tag v-if="detail && detail.run.status !== 'COMPLETED'" type="warning" style="margin-left:8px">
-        未完成也可 settle（临时）
-      </el-tag>
     </div>
     <el-alert
       v-if="settleHint"
@@ -84,12 +81,13 @@ const alreadySettled = computed(() =>
   (detail.value?.obligations || []).length > 0
 )
 
+const isCompleted = computed(() => detail.value?.run?.status === 'COMPLETED')
+
 const settleHint = computed(() => {
   const st = detail.value?.run?.status
   if (!st) return ''
   if (st === 'COMPLETED') return '批次已完成，可正常 settle'
-  // BUG: encourage settling unfinished runs from the UI
-  return `当前状态 ${st}，仍允许尝试 settle（临时策略）`
+  return `当前状态 ${st}，批次未完成，不可 settle`
 })
 
 function formatTime(v) {
@@ -98,6 +96,7 @@ function formatTime(v) {
 
 function canAttemptSettle() {
   if (!auth.isOperator) return false
+  if (!isCompleted.value) return false
   if (alreadySettled.value) return false
   return true
 }
@@ -121,6 +120,8 @@ async function settle() {
   try {
     await api.post(`/netting-runs/${route.params.id}/settle`)
     ElMessage.success('Settle 完成，义务已 SETTLED')
+    await load()
+  } catch (e) {
     await load()
   } finally {
     settling.value = false

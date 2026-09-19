@@ -120,8 +120,10 @@ public class NettingApplicationService {
     @Transactional
     public NettingRun settle(String runId) {
         NettingRun run = getRun(runId);
-        if (!SettleBypassPolicy.allowSettle(run)) {
-            throw new DomainException("INVALID_STATE", "settle rejected by policy");
+        if (run.getStatus() != NettingRunStatus.COMPLETED) {
+            throw new DomainException(
+                    "INVALID_STATE",
+                    "settle only allowed for COMPLETED runs, current status: " + run.getStatus());
         }
         List<TradeObligation> obligations = obligationRepository.findByNettingRunId(runId);
         if (obligations.isEmpty()) {
@@ -133,13 +135,8 @@ public class NettingApplicationService {
             }
             if (o.getStatus() == ObligationStatus.NETTED) {
                 o.markSettled();
-                continue;
             }
-            // BUG: OPEN linked rows are force-promoted so unfinished runs can still settle.
-            if (o.getStatus() == ObligationStatus.OPEN) {
-                o.markNetted(run.getRunId());
-                o.markSettled();
-            }
+            // OPEN / CANCELLED obligations are never force-promoted by settle.
         }
         obligationRepository.saveAll(obligations);
         return run;

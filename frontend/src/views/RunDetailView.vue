@@ -1,25 +1,25 @@
 <template>
   <div class="page">
     <h2 class="page-title">批次详情</h2>
-    <p class="page-desc">查看批次状态、参与义务、净头寸，并可确认 settle</p>
+    <p class="page-desc">查看批次状态、参与义务、净头寸；仅 COMPLETED 批次可确认 settle</p>
 
     <div class="toolbar">
       <el-button @click="$router.back()">返回</el-button>
       <el-button @click="load">刷新</el-button>
       <el-button
         type="success"
-        :disabled="!auth.isOperator || alreadySettled"
+        :disabled="!canSettle"
         :loading="settling"
         @click="settle"
       >确认 Settle</el-button>
-      <el-tag v-if="detail && detail.run.status !== 'COMPLETED'" type="warning" style="margin-left:8px">
-        未完成也可 settle（临时）
+      <el-tag v-if="detail && detail.run.status !== 'COMPLETED'" type="info" style="margin-left:8px">
+        批次未完成，不可 settle
       </el-tag>
     </div>
     <el-alert
       v-if="settleHint"
       style="margin:12px 0"
-      type="info"
+      :type="detail.run.status === 'COMPLETED' ? 'success' : 'warning'"
       :closable="false"
       :title="settleHint"
     />
@@ -84,22 +84,22 @@ const alreadySettled = computed(() =>
   (detail.value?.obligations || []).length > 0
 )
 
+const isCompleted = computed(() => detail.value?.run?.status === 'COMPLETED')
+
+const canSettle = computed(() => auth.isOperator && isCompleted.value && !alreadySettled.value)
+
 const settleHint = computed(() => {
   const st = detail.value?.run?.status
   if (!st) return ''
-  if (st === 'COMPLETED') return '批次已完成，可正常 settle'
-  // BUG: encourage settling unfinished runs from the UI
-  return `当前状态 ${st}，仍允许尝试 settle（临时策略）`
+  if (st !== 'COMPLETED') {
+    return `当前状态 ${st}：仅 COMPLETED 批次允许 settle，请等待批次完成`
+  }
+  if (alreadySettled.value) return '批次内义务均已 SETTLED，无需重复 settle'
+  return '批次已完成，可正常 settle'
 })
 
 function formatTime(v) {
   return v ? new Date(v).toLocaleString() : '-'
-}
-
-function canAttemptSettle() {
-  if (!auth.isOperator) return false
-  if (alreadySettled.value) return false
-  return true
 }
 
 async function load() {
@@ -113,8 +113,8 @@ async function load() {
 }
 
 async function settle() {
-  if (!canAttemptSettle()) {
-    ElMessage.warning('当前不可 settle')
+  if (!canSettle.value) {
+    ElMessage.warning('仅 COMPLETED 批次可 settle')
     return
   }
   settling.value = true
